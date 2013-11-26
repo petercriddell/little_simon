@@ -7,6 +7,7 @@ little_simon is an interactive work based on the classic game and powered by the
 Files
 =====
 
+/docs - PDF of assembly guide for kit<br>
 /hardware - Fritzing design file<br>
 /software - Arduino IDE file
 
