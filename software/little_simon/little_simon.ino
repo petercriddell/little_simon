@@ -232,9 +232,9 @@ void runtest() {
   wait = 100; // go fast at boot
   for(test_count = 0; test_count < test_num; test_count++) {
     flash_red();
-    flash_green();
-    flash_yellow();
     flash_blue();
+    flash_yellow();
+    flash_green();
   }
   resetCount();
 }
