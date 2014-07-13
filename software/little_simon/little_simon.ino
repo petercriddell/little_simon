@@ -19,24 +19,51 @@
  AVR microcontrollers.
  */
 
-const int led_red = 1;         // Output pins for the LEDs
-const int led_blue = 2;
+// set ASK_SILENT to 1 to let the user press the green button to turn off sound
+#define ASK_SILENT 0
+
+// set ASK_LEVEL to 1 to let the user choose the initial level by pressing a
+// button during the initial "roulette" display, which is shown faster to
+// tell that this feature is enabled:
+// RED: 8
+// GREEN: 14
+// YELLOW: 20
+// BLUE: 31
+#define ASK_LEVEL 0
+
+// set TEST_LEVELS to 1 to test changes to level logic
+#define TEST_LEVELS 0
+
+
+const int led_red    = 1;         // Output pins for the LEDs
+const int led_blue   = 2;
 const int led_yellow = 3;
-const int led_green = 4;
+const int led_green  = 4;
 const int buzzer = 5;		 // Output pin for the buzzer
-const int random_seed = 0;        // Unconnected pin used for random seed generation
-const int red_button = 9;      // Input pins for the buttons
-const int blue_button = 10;
-const int yellow_button = 6; 
-const int green_button = 7;   // Pin 13 is special - didn't work as planned
+const int random_seed = 0;       // Unconnected pin used for random seed generation
+const int red_button    = 7;     // Input pins for the buttons
+const int blue_button   = 8;
+const int yellow_button = 9;
+const int green_button  = 10;
 const int unused = 8;
-long sequence[20];             // Array to hold sequence
+// logic constants
+const int RED = 1;             // Program state associated with the colors
+const int BLUE = 2;            // These stay the same even if the led_* pins change
+const int YELLOW = 3;
+const int GREEN = 4;
+const int LEV1 = 8;            // Levels chosen from original simon game
+const int LEV2 = 14;           // 8, 14, 20, and 31 were the original game lengths
+const int LEV3 = 20;           // http://en.wikipedia.org/wiki/Simon_%28game%29
+const int LEV4 = 31;
+
+const int test_num = 3;        // Number of times power-on test is repeated
+
+long sequence[LEV4];           // Array to hold sequence
 int count = 0;                 // Sequence counter
-long input = 5;                // Button indicator
 int wait = 500;                // Variable delay as sequence gets longer
-int test_count = 0;            // Counter for power-on test function
-const int test_num = 3;              // Number of times power-on test is repeated  
-const int test_time = 100;           // Length of time for each step of test sequence in millis
+int silent = 0;                // Turned on if user chooses silent mode
+int level = LEV1;
+
 /*
   playtone function taken from Oomlout sample
  takes a tone variable that is half the period of desired frequency
@@ -44,9 +71,13 @@ const int test_time = 100;           // Length of time for each step of test seq
  */
 void playtone(int tone, int duration) {
   for (long i = 0; i < duration * 1000L; i += tone *2) {
-    digitalWrite(buzzer, HIGH);
+    if (!silent) {
+      digitalWrite(buzzer, HIGH);
+    }
     delayMicroseconds(tone);
-    digitalWrite(buzzer, LOW);
+    if (!silent) {
+      digitalWrite(buzzer, LOW);
+    }
     delayMicroseconds(tone);
   }
 }
@@ -80,44 +111,150 @@ void flash_green() {
   digitalWrite(led_green, LOW);
 }
 
-// a simple power-on test function to flash all of the LEDs in turn
-void runtest() {
-  for(test_count = 0; test_count < test_num; test_count++) {
-    digitalWrite(led_red, HIGH);      // Turn on LED
-    playtone(2273,test_time);        // Play corresponding tone for specified test_time
-    digitalWrite(led_red, LOW);      // Turn of LED
-    digitalWrite(led_blue, HIGH);      // Turn on LED
-    playtone(1700,test_time);        // Play corresponding tone for specified test_time
-    digitalWrite(led_blue, LOW);      // Turn of LED
-    digitalWrite(led_yellow, HIGH);      // Turn on LED
-    playtone(1275,test_time);        // Play corresponding tone for specified test_time
-    digitalWrite(led_yellow, LOW);      // Turn of LED
-    digitalWrite(led_green, HIGH);      // Turn on LED
-    playtone(1136,test_time);        // Play corresponding tone for specified test_time
-    digitalWrite(led_green, LOW);      // Turn of LED
+int readButton() {
+  if (digitalRead(red_button) == LOW) {    // Red button
+    return RED;
   }
-  // Test Pattern from Chris Swan's original code
-  //    flash_red();
-  //    flash_green();
-  //    flash_yellow();
-  //    flash_blue();  
+  if (digitalRead(green_button) == LOW) {  // Green button
+    return GREEN;
+  }
+  if (digitalRead(yellow_button) == LOW) { // Yellow button
+    return YELLOW;
+  }
+  if (digitalRead(blue_button) == LOW) {   // Blue button
+    return BLUE;
+  }
+  return 0; // No button pressed
 }
+
+// function to reset after winning or losing
+void resetCount() {
+  count = 0;
+  wait = 500;
+}
+
+void advanceLevel() {
+  switch (level) {
+    case LEV1:
+      level = LEV2;
+      break;
+    case LEV2:
+      level = LEV3;
+      break;
+    case LEV3:
+      level = LEV4;
+      break;
+    case LEV4:
+      // have mercy
+      level = LEV1;
+      break;
+  }
+}
+
+
+#if ASK_SILENT
+// choose silent mode if user asks by pressing green button while powering ontest
+void silence() {
+  silent = 1;
+  wait = 5;
+  long button = 0;
+  for (int i=1; i < 200; i++) { // one second
+    flash_green();
+    button = readButton();
+    if (button == GREEN) { // play silently
+      break;
+    }
+    if (button) { // any other button to play loud
+      silent = 0;
+      break;
+    }
+  }
+  if (!button) {
+    silent = 0;
+  }
+  resetCount();
+}
+#endif
+
+
+#if ASK_LEVEL
+void chooseLevel() {
+  wait = 50;
+  long button = 0;
+
+  delay(500); // debounce for silent mode choice
+  for (int i=1; i < 30; i++) { // two seconds
+    switch (i % 4) {
+      case 0:
+        flash_red();
+        break;
+      case 1:
+        flash_green();
+        break;
+      case 2:
+        flash_yellow();
+        break;
+      case 3:
+        flash_blue();
+        delay(50);
+        break;
+    }
+
+    button = readButton();
+    switch (button) {
+      case RED:
+        level = LEV1;
+        break;
+      case GREEN:
+        level = LEV2;
+        break;
+      case YELLOW:
+        level = LEV3;
+        break;
+      case BLUE:
+        level = LEV4;
+        break;
+    }
+    if (button) {
+      break;
+    }
+  }
+  resetCount();
+}
+
+#else
+
+// a simple power-on test function to flash all of the LEDs in turn
+// without offering the user the chance to choose a level
+void runtest() {
+  int test_count = 0;
+
+  wait = 100; // go fast at boot
+  for(test_count = 0; test_count < test_num; test_count++) {
+    flash_red();
+    flash_blue();
+    flash_yellow();
+    flash_green();
+  }
+  resetCount();
+}
+#endif
 
 /* a function to flash the LED corresponding to what is held
  in the sequence
  */
 void squark(long led) {
   switch (led) {
-  case 0:
+  case RED:
     flash_red();
     break;
-  case 1:
+  case GREEN:
     flash_green();
     break;
-  case 2:
+  case YELLOW:
     flash_yellow();
     break;
-  case 3:
+  case BLUE:
     flash_blue();
     break;
   }
@@ -147,17 +284,20 @@ void congratulate() {
   digitalWrite(led_yellow, LOW);
   digitalWrite(led_blue, LOW);
   resetCount();                      // reset sequence
+  advanceLevel();
 }
 
-// function to reset after winning or losing
-void resetCount() {
-  count = 0;
-  wait = 500;
+long getNext() {
+#if TEST_LEVELS
+  return RED; // make testing through all levels easier
+#else
+  return (random(4) + 1);
+#endif
 }
 
 // function to build and play the sequence
 void playSequence() {
-  sequence[count] = random(4);       // add a new value to sequence
+  sequence[count] = getNext();       // add a new R/G/Y/B value to sequence
   for (int i = 0; i < count; i++) {  // loop for sequence length
     squark(sequence[i]);             // flash/beep
   }
@@ -167,24 +307,14 @@ void playSequence() {
 
 // function to read sequence from player 
 void readSequence() {
+  long input = 0;
   for (int i=1; i < count; i++) {               // loop for sequence length
-    while (input==5){                          // wait until button pressed
-      if (digitalRead(red_button) == LOW) {    // Red button
-        input = 0;
-      }
-      if (digitalRead(green_button) == LOW) {  // Green button
-        input = 1;
-      }
-      if (digitalRead(yellow_button) == LOW) { // Yellow button
-        input = 2;
-      }
-      if (digitalRead(blue_button) == LOW) {   // Blue button
-        input = 3;
-      }
-    }
+    do {                                       // wait until button pressed
+      input = readButton();
+    } while (!input);
     if (sequence[i-1] == input) {              // was it the right button?
       squark(input);                           // flash/buzz
-      if (i == 20) {                           // check for correct sequence of 20
+      if (i == level) {                        // check for correct sequence length
         congratulate();                        // congratulate the winner
       }
     }
@@ -194,7 +324,6 @@ void readSequence() {
       squark(sequence[i-1]);
       resetCount();                          // reset sequence
     } 
-    input = 5;                                   // reset input
   }
 }  
 
@@ -211,7 +340,15 @@ void setup() {
   pinMode(yellow_button, INPUT_PULLUP);
   pinMode(blue_button, INPUT_PULLUP);
   randomSeed(analogRead(random_seed));     // random seed for sequence generation
+#if ASK_SILENT
+  silence(); // before noisy runtest in case use wants silent
+#endif
+  // need only one of runtest or chooseLevel
+#if ASK_LEVEL
+  chooseLevel();
+#else
   runtest();
+#endif
 }
 
 // standard sketch loop function
