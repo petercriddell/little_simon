@@ -19,8 +19,20 @@
  AVR microcontrollers.
  */
 
+
+// Initialization options
+
 // set ASK_SILENT to 1 to let the user press the green button to turn off sound
 #define ASK_SILENT 0
+
+// set ASK_CHEAT to 1 to let the user press the blue button to cheat and never fail
+// requires ASK_SILENT because that is when there is time to notice this button press
+#define ASK_CHEAT 0
+#if ASK_CHEAT
+#define ASK_SILENT 1
+#endif
+
+// Roulette options
 
 // set ASK_LEVEL to 1 to let the user choose the initial level by pressing a
 // button during the initial "roulette" display, which is shown faster to
@@ -30,9 +42,6 @@
 // YELLOW: 20
 // BLUE: 31
 #define ASK_LEVEL 0
-
-// set TEST_LEVELS to 1 to test changes to level logic
-#define TEST_LEVELS 0
 
 
 const int led_red    = 1;         // Output pins for the LEDs
@@ -63,6 +72,7 @@ int count = 0;                 // Sequence counter
 int wait = 500;                // Variable delay as sequence gets longer
 int silent = 0;                // Turned on if user chooses silent mode
 int level = LEV1;
+int cheating = 0;              // Set if user has asked to cheat
 
 /*
   playtone function taken from Oomlout sample
@@ -161,6 +171,12 @@ void silence() {
   for (int i=1; i < 200; i++) { // one second
     flash_green();
     button = readButton();
+    # if ASK_CHEAT
+    if (button == BLUE) { // cheat, please!
+      cheating = 1;
+      continue;           // also play silently?
+    }
+    #endif
     if (button == GREEN) { // play silently
       break;
     }
@@ -288,11 +304,7 @@ void congratulate() {
 }
 
 long getNext() {
-#if TEST_LEVELS
-  return RED; // make testing through all levels easier
-#else
   return (random(4) + 1);
-#endif
 }
 
 // function to build and play the sequence
@@ -312,8 +324,8 @@ void readSequence() {
     do {                                       // wait until button pressed
       input = readButton();
     } while (!input);
-    if (sequence[i-1] == input) {              // was it the right button?
-      squark(input);                           // flash/buzz
+    if (cheating || sequence[i-1] == input) {  // was it the right button?
+      squark(sequence[i-1]);                   // flash/buzz
       if (i == level) {                        // check for correct sequence length
         congratulate();                        // congratulate the winner
       }
