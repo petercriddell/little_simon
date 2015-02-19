@@ -60,18 +60,28 @@ const int RED = 1;             // Program state associated with the colors
 const int BLUE = 2;            // These stay the same even if the led_* pins change
 const int YELLOW = 3;
 const int GREEN = 4;
-const int LEV1 = 8;            // Levels chosen from original simon game
-const int LEV2 = 14;           // 8, 14, 20, and 31 were the original game lengths
-const int LEV3 = 20;           // http://en.wikipedia.org/wiki/Simon_%28game%29
-const int LEV4 = 31;
+const int buttons[] = {0,      // index by RED/BLUE/YELLOW/GREEN color
+  red_button,
+  blue_button,
+  yellow_button,
+  green_button
+};
+// Levels chosen from original simon game
+// 8, 14, 20, and 31 were the original game lengths
+// http://en.wikipedia.org/wiki/Simon_%28game%29
+// change to any levels you want, no more than
+// 32 in any level without increasing the length
+// of the sequence array
+const int levels[] = {8, 14, 20, 31};
+const int num_levels = sizeof(levels) / sizeof(int);
+long sequence[32];             // Array to hold max-length sequence
 
 const int test_num = 3;        // Number of times power-on test is repeated
 
-long sequence[LEV4];           // Array to hold sequence
 int count = 0;                 // Sequence counter
 int wait = 500;                // Variable delay as sequence gets longer
 int silent = 0;                // Turned on if user chooses silent mode
-int level = LEV1;
+int level = 0;
 int cheating = 0;              // Set if user has asked to cheat
 
 /*
@@ -121,6 +131,22 @@ void flash_green() {
   digitalWrite(led_green, LOW);
 }
 
+void waitButtonUp(int color, int debounceWait) {
+  int button = buttons[color];
+  int debounce = 0;
+  do {
+     if (digitalRead(button) == HIGH) {
+       debounce++;
+       if (debounce >= debounceWait) {
+         return;
+       }
+     } else {
+       debounce = 0;  // still bouncing; start over
+     }
+     delayMicroseconds(10);
+  } while (1);
+}
+
 int readButton() {
   if (digitalRead(red_button) == LOW) {    // Red button
     return RED;
@@ -144,21 +170,7 @@ void resetCount() {
 }
 
 void advanceLevel() {
-  switch (level) {
-    case LEV1:
-      level = LEV2;
-      break;
-    case LEV2:
-      level = LEV3;
-      break;
-    case LEV3:
-      level = LEV4;
-      break;
-    case LEV4:
-      // have mercy
-      level = LEV1;
-      break;
-  }
+  level = (level + 1) % num_levels;
 }
 
 
@@ -171,6 +183,7 @@ void silence() {
   for (int i=1; i < 200; i++) { // one second
     flash_green();
     button = readButton();
+    waitButtonUp(button, 1);
     # if ASK_CHEAT
     if (button == BLUE) { // cheat, please!
       cheating = 1;
@@ -198,7 +211,6 @@ void chooseLevel() {
   wait = 50;
   long button = 0;
 
-  delay(500); // debounce for silent mode choice
   for (int i=1; i < 30; i++) { // two seconds
     switch (i % 4) {
       case 0:
@@ -217,22 +229,22 @@ void chooseLevel() {
     }
 
     button = readButton();
+    if (button) {
+      waitButtonUp(button, 1);
+    }
     switch (button) {
       case RED:
-        level = LEV1;
+        level = 0;
         break;
       case GREEN:
-        level = LEV2;
+        level = 1;
         break;
       case YELLOW:
-        level = LEV3;
+        level = 2;
         break;
       case BLUE:
-        level = LEV4;
+        level = 3;
         break;
-    }
-    if (button) {
-      break;
     }
   }
   resetCount();
@@ -259,8 +271,8 @@ void runtest() {
 /* a function to flash the LED corresponding to what is held
  in the sequence
  */
-void squark(long led) {
-  switch (led) {
+void squark(long color, int press) {
+  switch (color) {
   case RED:
     flash_red();
     break;
@@ -274,7 +286,12 @@ void squark(long led) {
     flash_blue();
     break;
   }
-  delay(50);
+  if (press) {
+    waitButtonUp(color, 1);
+    delay(10);
+  } else {
+    delay(50);
+  }
 }
 
 // function to congratulate winning sequence
@@ -311,9 +328,10 @@ long getNext() {
 void playSequence() {
   sequence[count] = getNext();       // add a new R/G/Y/B value to sequence
   for (int i = 0; i < count; i++) {  // loop for sequence length
-    squark(sequence[i]);             // flash/beep
+    squark(sequence[i], 0);          // flash/beep
   }
-  wait = 500 - (count * 15);         // vary delay
+  // speed up as more answers right, but too fast is unplayable
+  wait = max(500 - (count * 15), 200);
   count++;                           // increment sequence length
 }
 
@@ -325,15 +343,15 @@ void readSequence() {
       input = readButton();
     } while (!input);
     if (cheating || sequence[i-1] == input) {  // was it the right button?
-      squark(sequence[i-1]);                   // flash/buzz
-      if (i == level) {                        // check for correct sequence length
+      squark(sequence[i-1], 1);                // flash/buzz
+      if (i == levels[level]) {                // check for correct sequence length
         congratulate();                        // congratulate the winner
       }
     }
     else {
       playtone(4545,1000);                   // low tone for fail
-      squark(sequence[i-1]);                 // double flash for the right colour
-      squark(sequence[i-1]);
+      squark(sequence[i-1], 0);              // double flash for the right colour
+      squark(sequence[i-1], 0);
       resetCount();                          // reset sequence
     } 
   }
